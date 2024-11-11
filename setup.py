@@ -7,9 +7,12 @@ from setuptools import find_namespace_packages, setup
 setup(
     name="agent-builder",
     version="0.0.1",
+    author="Recall Space",
+    author_email="info@recall.space",  
     description="The agent-builder package to develop LLM based models.",
-    author="recall space",
-    license="Closed source",
+    long_description=open('README.md').read(),
+    long_description_content_type="text/markdown", 
+    url="https://github.com/Recall-Space/agent-builder",  
     packages=find_namespace_packages(exclude=["tests"]),
     zip_safe=False,
     include_package_data=True,
@@ -25,7 +28,7 @@ setup(
         "Development Status :: 1 - Planning",
         "Intended Audience :: Developers",
         "Topic :: Software Development :: Build Tools",
-        "License :: OSI Approved :: Closed sourceLicense",
         "Programming Language :: Python :: 3.10",
     ],
+    license="MIT"
 )
