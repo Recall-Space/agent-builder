@@ -20,7 +20,7 @@ The **agent-builder** package provides a modular framework for building autonomo
 
 ## UML Class Design
 
-:::mermaid
+```mermaid
 classDiagram
     class BaseBuilder {
       <<abstract>>
@@ -58,10 +58,10 @@ classDiagram
     BaseBuilder <|-- AgentBuilder
     BaseBuilder <|-- ToolBuilder
 
-:::
+```
 ### Builder design pattern
 
-:::mermaid
+```mermaid
 classDiagram
     class BaseBuilder {
       <<abstract>>
@@ -110,7 +110,7 @@ classDiagram
     BaseBuilder <|-- AgentBuilder
     AgentBuilder --> Agent : builds
 
-:::
+```
 
 ## How to Use
 1. Building a Tool
