@@ -10,7 +10,6 @@ setup(
     author="Recall Space",
     author_email="info@recall.space",  
     description="The agent-builder package to develop LLM based models.",
-    long_description=open('README.md').read(),
     url="https://github.com/Recall-Space/agent-builder",  
     packages=find_namespace_packages(exclude=["tests"]),
     zip_safe=False,
