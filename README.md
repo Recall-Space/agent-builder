@@ -1,5 +1,5 @@
 [![recall_space_logo](logo.png)](https://recall.space/)
-[![python](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10-blue)](https://www.python.org/)
+[![python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 | Environment | Version |
