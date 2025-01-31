@@ -8,9 +8,17 @@ This module provides functions to:
 """
 
 import asyncio
-import pyaudio
 import base64
 import json
+
+# Attempt to import pyaudio and handle the case where it's missing
+try:
+    import pyaudio
+
+    AUDIO_ENABLED = True
+except ImportError:
+    AUDIO_ENABLED = False
+    print("Warning: pyaudio is not installed. Audio functionality will be disabled.")
 
 
 class AudioHandler:
@@ -27,31 +35,39 @@ class AudioHandler:
         self.channels = channels
         self.output_queue = asyncio.Queue()
 
-        # Initialize PyAudio
-        self.p = pyaudio.PyAudio()
+        if AUDIO_ENABLED:
+            # Initialize PyAudio if available
+            self.p = pyaudio.PyAudio()
 
-        # Open Input (Microphone)
-        self.stream_in = self.p.open(
-            format=pyaudio.paInt16,
-            channels=self.channels,
-            rate=self.rate,
-            input=True,
-            frames_per_buffer=self.frame_size,
-        )
+            # Open Input (Microphone)
+            self.stream_in = self.p.open(
+                format=pyaudio.paInt16,
+                channels=self.channels,
+                rate=self.rate,
+                input=True,
+                frames_per_buffer=self.frame_size,
+            )
 
-        # Open Output (Speaker)
-        self.stream_out = self.p.open(
-            format=pyaudio.paInt16,
-            channels=self.channels,
-            rate=self.rate,
-            output=True,
-            frames_per_buffer=self.frame_size,
-        )
+            # Open Output (Speaker)
+            self.stream_out = self.p.open(
+                format=pyaudio.paInt16,
+                channels=self.channels,
+                rate=self.rate,
+                output=True,
+                frames_per_buffer=self.frame_size,
+            )
+        else:
+            print(
+                "Warning: Audio functionality will be skipped due to missing pyaudio."
+            )
 
     async def audio_input_generator(self):
         """
         Asynchronous generator to capture audio from the microphone and yield as base64-encoded strings.
         """
+        if not AUDIO_ENABLED:
+            return  # Skip if audio is disabled
+
         try:
             while True:
                 data = self.stream_in.read(self.frame_size, exception_on_overflow=False)
@@ -80,6 +96,9 @@ class AudioHandler:
         """
         Plays audio smoothly from the output queue with pre-buffering.
         """
+        if not AUDIO_ENABLED:
+            return  # Skip if audio is disabled
+
         try:
             pre_buffer = [
                 await self.output_queue.get() for _ in range(3)
@@ -97,8 +116,11 @@ class AudioHandler:
         """
         Closes all audio streams and terminates PyAudio.
         """
-        self.stream_in.stop_stream()
-        self.stream_in.close()
-        self.stream_out.stop_stream()
-        self.stream_out.close()
-        self.p.terminate()
+        if AUDIO_ENABLED:
+            self.stream_in.stop_stream()
+            self.stream_in.close()
+            self.stream_out.stop_stream()
+            self.stream_out.close()
+            self.p.terminate()
+        else:
+            print("Warning: No audio resources to close due to missing pyaudio.")

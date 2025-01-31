@@ -9,8 +9,8 @@
 
 | Environment  | Version |
 |-------------|---------|
-| Production  | 0.1.0   |
-| Development | 0.1.0   |
+| Production  | 0.1.1   |
+| Development | 0.1.1   |
 
 # 🛠️ **Agent Builder** - Modular AI Agent Framework
 

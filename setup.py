@@ -6,7 +6,7 @@ from setuptools import find_namespace_packages, setup
 
 setup(
     name="agent-builder",
-    version="0.1.0",
+    version="0.1.1",
     author="Recall Space",
     author_email="info@recall.space",
     description="The agent-builder package to develop LLM based models.",
@@ -19,7 +19,6 @@ setup(
         "langchain-core<1.0.0",
         "langchain-openai<1.0.0",
         "websockets",
-        "pyaudio",
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest==8.0.0", "pytest-asyncio==0.23.6"],
