@@ -4,8 +4,8 @@
 
 | Environment | Version |
 | ----------- | ------- |
-| Production  | 0.0.1   |
-| Development | 0.0.1   |
+| Production  | 0.1.0   |
+| Development | 0.1.0   |
 
 ```
 pip install agent-builder
