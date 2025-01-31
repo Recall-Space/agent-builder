@@ -50,7 +50,6 @@ import json
 import logging
 from typing import Any, AsyncIterator, Callable, Coroutine, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel
 from langchain_core.tools import BaseTool
 from agent_builder.utils.websocket_connection import websocket_connection
 
@@ -136,8 +135,7 @@ class VoiceAgent:
         self.max_response_output_tokens = max_response_output_tokens
 
         self.tools_by_name = {tool.name: tool for tool in self.tools}
-        self._tool_call_future: asyncio.Future = asyncio.Future()
-        self._tool_executor_lock = asyncio.Lock()
+        self._tool_call_queue: asyncio.Queue = asyncio.Queue()
 
         tool_names = ", ".join([tool.name for tool in self.tools])
         logging.info(
@@ -281,27 +279,13 @@ class VoiceAgent:
         tool_call_data : Dict[str, Any]
             The data related to the tool call.
         """
-        async with self._tool_executor_lock:
-            if self._tool_call_future.done():
-                raise ValueError("Tool call already in progress.")
-            loop = asyncio.get_running_loop()
-            self._tool_call_future = loop.create_future()
-            self._tool_call_future.set_result(tool_call_data)
+        await self._tool_call_queue.put(tool_call_data)
 
-    async def _wait_for_tool_call(self) -> Dict[str, Any]:
+    async def _execute_tool_call(
+        self, tool_call_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        Waits for a tool call to be added.
-
-        Returns
-        -------
-        Dict[str, Any]
-            The tool call data.
-        """
-        return await self._tool_call_future
-
-    def _execute_tool_call(self, tool_call_data: Dict[str, Any]) -> asyncio.Task:
-        """
-        Creates a task to execute the tool call asynchronously.
+        Executes the tool call and returns the result event.
 
         Parameters
         ----------
@@ -310,8 +294,8 @@ class VoiceAgent:
 
         Returns
         -------
-        asyncio.Task
-            The task that executes the tool.
+        Dict[str, Any]
+            The event containing the tool execution result.
         """
         tool = self.tools_by_name.get(tool_call_data["name"])
         if tool is None:
@@ -327,23 +311,20 @@ class VoiceAgent:
                 f"Failed to parse arguments '{tool_call_data['arguments']}'. Must be valid JSON."
             )
 
-        async def run_tool() -> Dict[str, Any]:
-            result = await tool.ainvoke(args)
-            try:
-                result_str = json.dumps(result)
-            except TypeError:
-                result_str = str(result)
-            return {
-                "type": CONVERSATION_ITEM_CREATE,
-                "item": {
-                    "id": tool_call_data["call_id"],
-                    "call_id": tool_call_data["call_id"],
-                    "type": "function_call_output",
-                    "output": result_str,
-                },
-            }
-
-        return asyncio.create_task(run_tool())
+        result = await tool.ainvoke(args)
+        try:
+            result_str = json.dumps(result)
+        except TypeError:
+            result_str = str(result)
+        return {
+            "type": CONVERSATION_ITEM_CREATE,
+            "item": {
+                "id": tool_call_data["call_id"],
+                "call_id": tool_call_data["call_id"],
+                "type": "function_call_output",
+                "output": result_str,
+            },
+        }
 
     async def _tool_output_stream(self) -> AsyncIterator[Dict[str, Any]]:
         """
@@ -354,38 +335,21 @@ class VoiceAgent:
         Dict[str, Any]
             Tool execution output data.
         """
-        tool_call_task = asyncio.create_task(self._wait_for_tool_call())
-        tasks = {tool_call_task}
         while True:
-            done_tasks, _ = await asyncio.wait(
-                tasks, return_when=asyncio.FIRST_COMPLETED
-            )
-            for task in done_tasks:
-                tasks.remove(task)
-                if task == tool_call_task:
-                    # Reset the future for the next tool call
-                    async with self._tool_executor_lock:
-                        loop = asyncio.get_running_loop()
-                        self._tool_call_future = loop.create_future()
-                    tool_call_task = asyncio.create_task(self._wait_for_tool_call())
-                    tasks.add(tool_call_task)
-
-                    tool_call_data = task.result()
-                    try:
-                        new_task = self._execute_tool_call(tool_call_data)
-                        tasks.add(new_task)
-                    except ValueError as e:
-                        yield {
-                            "type": CONVERSATION_ITEM_CREATE,
-                            "item": {
-                                "id": tool_call_data["call_id"],
-                                "call_id": tool_call_data["call_id"],
-                                "type": "function_call_output",
-                                "output": f"Error: {str(e)}",
-                            },
-                        }
-                else:
-                    yield task.result()
+            tool_call_data = await self._tool_call_queue.get()
+            try:
+                result_event = await self._execute_tool_call(tool_call_data)
+                yield result_event
+            except Exception as e:
+                yield {
+                    "type": CONVERSATION_ITEM_CREATE,
+                    "item": {
+                        "id": tool_call_data["call_id"],
+                        "call_id": tool_call_data["call_id"],
+                        "type": "function_call_output",
+                        "output": f"Error: {str(e)}",
+                    },
+                }
 
     async def ainvoke(
         self,
@@ -399,7 +363,7 @@ class VoiceAgent:
         ----------
         input_audio_stream : AsyncIterator[str]
             The input audio stream to be processed by the agent.
-            for e.g.
+            For example:
             ```
             event = {
                 "type": "input_audio_buffer.append",
@@ -428,46 +392,30 @@ class VoiceAgent:
         Tuple[str, Any]
             A tuple containing the stream name and the data from the stream.
         """
-        tasks = {
-            name: asyncio.create_task(self._stream_wrapper(name, stream))
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def read_stream(name: str, stream: AsyncIterator[Any]) -> None:
+            async for data in stream:
+                await queue.put((name, data))
+            await queue.put((name, None))  # Signal that this stream is done
+
+        # Create tasks for each stream
+        tasks = [
+            asyncio.create_task(read_stream(name, stream))
             for name, stream in streams.items()
-        }
-        while tasks:
-            done_tasks, _ = await asyncio.wait(
-                tasks.values(), return_when=asyncio.FIRST_COMPLETED
-            )
-            for task in done_tasks:
-                stream_name, data = task.result()
+        ]
+        active_streams = set(streams.keys())
+
+        try:
+            while active_streams:
+                stream_name, data = await queue.get()
                 if data is None:
-                    # Stream has ended
-                    del tasks[stream_name]
+                    # One stream is done
+                    active_streams.remove(stream_name)
                 else:
                     yield stream_name, data
-                    # Recreate the task for the next item
-                    tasks[stream_name] = asyncio.create_task(
-                        self._stream_wrapper(stream_name, streams[stream_name])
-                    )
-
-    async def _stream_wrapper(
-        self, name: str, stream: AsyncIterator[Any]
-    ) -> Tuple[str, Any]:
-        """
-        Wraps an asynchronous iterator to return its items along with a name.
-
-        Parameters
-        ----------
-        name : str
-            The name of the stream.
-        stream : AsyncIterator[Any]
-            The asynchronous iterator to wrap.
-
-        Returns
-        -------
-        Tuple[str, Any]
-            A tuple containing the stream name and the next item, or (name, None) if the stream ends.
-        """
-        try:
-            data = await stream.__anext__()
-            return name, data
-        except StopAsyncIteration:
-            return name, None
+        finally:
+            # Cancel any remaining tasks
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
