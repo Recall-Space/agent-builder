@@ -69,11 +69,25 @@ classDiagram
     }
 
     class VoiceAgentBuilder {
-      +set_api_key(api_key: str)
-      +set_model_url(url: str)
-      +set_goal(goal: str)
-      +build() VoiceAgent
+        +set_api_key(api_key: str): VoiceAgentBuilder
+        +set_model_url(url: str): VoiceAgentBuilder
+        +set_goal(goal: str): VoiceAgentBuilder
+        +set_voice(voice: str): VoiceAgentBuilder
+        +add_tool(tool: BaseTool): VoiceAgentBuilder
+        +set_tools(tools: List[BaseTool]): VoiceAgentBuilder
+        +set_temperature(temperature: float): VoiceAgentBuilder
+        +set_modalities(modalities: List[str]): VoiceAgentBuilder
+        +set_input_audio_format(format: str): VoiceAgentBuilder
+        +set_output_audio_format(format: str): VoiceAgentBuilder
+        +set_input_audio_transcription(config: Dict[str, Any]): VoiceAgentBuilder
+        +set_turn_detection(config: Dict[str, Any]): VoiceAgentBuilder
+        +set_tool_choice(choice: str): VoiceAgentBuilder
+        +set_max_response_output_tokens(max_tokens: int): VoiceAgentBuilder
+        +validate(): void
+        +build(): VoiceAgent
+        +reset(): void
     }
+
 
     BaseBuilder <|-- AgentBuilder
     BaseBuilder <|-- ToolBuilder
