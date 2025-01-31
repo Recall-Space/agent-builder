@@ -186,7 +186,11 @@ class VoiceAgent:
                 "temperature": self.temperature,
                 "tools": tool_definitions,
                 "tool_choice": self.tool_choice,
-                "input_audio_transcription": self.input_audio_transcription,
+                "input_audio_transcription": (
+                    self.input_audio_transcription
+                    if self.input_audio_transcription
+                    else None
+                ),
             }
 
             # Add optional session parameters if specified
@@ -280,6 +284,8 @@ class VoiceAgent:
         async with self._tool_executor_lock:
             if self._tool_call_future.done():
                 raise ValueError("Tool call already in progress.")
+            loop = asyncio.get_running_loop()
+            self._tool_call_future = loop.create_future()
             self._tool_call_future.set_result(tool_call_data)
 
     async def _wait_for_tool_call(self) -> Dict[str, Any]:
@@ -293,7 +299,7 @@ class VoiceAgent:
         """
         return await self._tool_call_future
 
-    async def _execute_tool_call(self, tool_call_data: Dict[str, Any]) -> asyncio.Task:
+    def _execute_tool_call(self, tool_call_data: Dict[str, Any]) -> asyncio.Task:
         """
         Creates a task to execute the tool call asynchronously.
 
@@ -359,13 +365,14 @@ class VoiceAgent:
                 if task == tool_call_task:
                     # Reset the future for the next tool call
                     async with self._tool_executor_lock:
-                        self._tool_call_future = asyncio.Future()
+                        loop = asyncio.get_running_loop()
+                        self._tool_call_future = loop.create_future()
                     tool_call_task = asyncio.create_task(self._wait_for_tool_call())
                     tasks.add(tool_call_task)
 
                     tool_call_data = task.result()
                     try:
-                        new_task = await self._execute_tool_call(tool_call_data)
+                        new_task = self._execute_tool_call(tool_call_data)
                         tasks.add(new_task)
                     except ValueError as e:
                         yield {

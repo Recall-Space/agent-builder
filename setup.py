@@ -19,6 +19,7 @@ setup(
         "langchain-core<1.0.0",
         "langchain-openai<1.0.0",
         "websockets",
+        "pyaudio",
     ],
     setup_requires=["pytest-runner"],
     tests_require=["pytest==8.0.0", "pytest-asyncio==0.23.6"],
