@@ -57,6 +57,7 @@ from agent_builder.utils.websocket_connection import websocket_connection
 from agent_builder.config.default import (
     SESSION_UPDATE,
     RESPONSE_CREATE,
+    RESPONSE_CANCEL,
     CONVERSATION_ITEM_CREATE,
     INPUT_AUDIO_BUFFER_APPEND,
     RESPONSE_AUDIO_DELTA,
@@ -235,6 +236,8 @@ class VoiceAgent:
                     # Trigger a new response from the model
                     await send_event({"type": RESPONSE_CREATE, "response": {}})
                 elif stream_name == "model_output":
+                    if event.get("type") == INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+                        await send_event({"type": RESPONSE_CANCEL})
                     await self._handle_model_output_event(event, handle_output_event)
 
     async def _handle_model_output_event(
