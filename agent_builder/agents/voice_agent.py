@@ -1,5 +1,3 @@
-# Module: voice_agent.py
-
 """
 VoiceAgent Module
 
@@ -69,6 +67,7 @@ from agent_builder.config.default import (
     INPUT_AUDIO_TRANSCRIPTION_COMPLETED,
     RESPONSE_AUDIO_TRANSCRIPT_DONE,
     EVENTS_TO_IGNORE,
+    CALL_END,
 )
 
 
@@ -149,6 +148,14 @@ class VoiceAgent:
             f"voice: {self.voice}\n"
         )
 
+    async def close_connection(self) -> None:
+        """
+        Allows external code to signal that the agent should close its connection
+        to the OpenAI Realtime API at the next available opportunity.
+        """
+        logging.info("VoiceAgent.close_connection() called. Will stop main loop soon.")
+        self._should_close = True
+
     async def connect(
         self,
         input_audio_stream: AsyncIterator[str],
@@ -164,6 +171,8 @@ class VoiceAgent:
         handle_output_event : Callable[[str], Coroutine[Any, Any, None]]
             Callback to handle output events from the model.
         """
+
+        self._should_close = False
 
         async with websocket_connection(
             model_url=self.model_url,
@@ -192,8 +201,6 @@ class VoiceAgent:
                     else None
                 ),
             }
-
-            # Add optional session parameters if specified
             if self.modalities:
                 session_config["modalities"] = self.modalities
             if self.input_audio_format != "pcm16":
@@ -214,13 +221,14 @@ class VoiceAgent:
                 }
             )
 
-            # Merge input streams and process events
+            # Merge input streams (audio, model output, tool outputs) into one
             async for stream_name, event_data in self._merge_streams(
                 input_audio=input_audio_stream,
                 model_output=receive_event_stream,
                 tool_outputs=self._tool_output_stream(),
             ):
-                # Parse event data
+                # --------------------------------------------------------------------------------
+                # Parse event data from the other streams
                 if isinstance(event_data, str):
                     try:
                         event = json.loads(event_data)
@@ -230,16 +238,34 @@ class VoiceAgent:
                 else:
                     event = event_data
 
+                # Audio input stream => forward to OpenAI Realtime
                 if stream_name == "input_audio":
                     await send_event(event)
+
+                # Tool outputs => forward them, then trigger a new model response
                 elif stream_name == "tool_outputs":
-                    await send_event(event)
-                    # Trigger a new response from the model
-                    await send_event({"type": RESPONSE_CREATE, "response": {}})
+                    # If the tool_outputs stream hands us a "call_end_signal", raise CallEndException
+                    # so that we can end the call in the parent function.
+                    if event.get("type") == CALL_END:
+                        await self._handle_model_output_event(
+                            event, handle_output_event
+                        )
+                        self._should_close = True
+                    else:
+                        await send_event(event)
+                        await send_event({"type": RESPONSE_CREATE, "response": {}})
+
+                # Model output => handle or forward it
                 elif stream_name == "model_output":
                     if event.get("type") == INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+                        # If user begins talking again, cancel
                         await send_event({"type": RESPONSE_CANCEL})
                     await self._handle_model_output_event(event, handle_output_event)
+
+                # Check after processing the event, in case we set it inside the handling
+                if self._should_close:
+                    logging.info("VoiceAgent.connect: Closing after event handling.")
+                    break
 
     async def _handle_model_output_event(
         self,
@@ -248,7 +274,6 @@ class VoiceAgent:
     ) -> None:
         """
         Processes events received from the model.
-
         Parameters
         ----------
         event : Dict[str, Any]
@@ -258,8 +283,12 @@ class VoiceAgent:
         """
         event_type = event.get("type")
         if event_type == RESPONSE_AUDIO_DELTA:
+            # Audio to be played to the user
             await handle_output_event(json.dumps(event))
         elif event_type == INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+            await handle_output_event(json.dumps(event))
+        elif event_type == CALL_END:
+            logging.INFO("Ending the call. Recieved CALL_END event.")
             await handle_output_event(json.dumps(event))
         elif event_type == ERROR:
             logging.error(f"Error event received: {event}")
@@ -276,7 +305,7 @@ class VoiceAgent:
 
     async def _add_tool_call(self, tool_call_data: Dict[str, Any]) -> None:
         """
-        Adds a tool call to be executed.
+        Adds a tool call to our queue to be executed asynchronously.
 
         Parameters
         ----------
@@ -289,8 +318,7 @@ class VoiceAgent:
         self, tool_call_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Executes the tool call and returns the result event.
-
+        Executes a tool call and returns a conversation item event with the tool's result.
         Parameters
         ----------
         tool_call_data : Dict[str, Any]
@@ -320,6 +348,7 @@ class VoiceAgent:
             result_str = json.dumps(result)
         except TypeError:
             result_str = str(result)
+
         return {
             "type": CONVERSATION_ITEM_CREATE,
             "item": {
@@ -332,8 +361,7 @@ class VoiceAgent:
 
     async def _tool_output_stream(self) -> AsyncIterator[Dict[str, Any]]:
         """
-        An asynchronous generator that yields tool execution outputs.
-
+        Retrieves tool calls from the queue, executes them, and yields their outputs.
         Yields
         ------
         Dict[str, Any]
@@ -345,9 +373,14 @@ class VoiceAgent:
                 result_event = await self._execute_tool_call(tool_call_data)
                 yield result_event
             except CallEndException as e:
-                # re-raise CallEndException so it can bubble up
-                raise e
+                # Instead of re-raising, we send a special "call_end_signal"
+                yield {
+                    "type": CALL_END,
+                    "item": {},
+                }
+                break  # terminate this generator
             except Exception as e:
+                # Any other error => yield error message
                 yield {
                     "type": CONVERSATION_ITEM_CREATE,
                     "item": {
@@ -404,9 +437,8 @@ class VoiceAgent:
         async def read_stream(name: str, stream: AsyncIterator[Any]) -> None:
             async for data in stream:
                 await queue.put((name, data))
-            await queue.put((name, None))  # Signal that this stream is done
+            await queue.put((name, None))  # Mark that this stream is done
 
-        # Create tasks for each stream
         tasks = [
             asyncio.create_task(read_stream(name, stream))
             for name, stream in streams.items()
@@ -417,12 +449,12 @@ class VoiceAgent:
             while active_streams:
                 stream_name, data = await queue.get()
                 if data is None:
-                    # One stream is done
+                    # one stream is finished
                     active_streams.remove(stream_name)
                 else:
                     yield stream_name, data
         finally:
-            # Cancel any remaining tasks
+            # Cleanup tasks
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

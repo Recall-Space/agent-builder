@@ -14,6 +14,9 @@ INPUT_AUDIO_TRANSCRIPTION_COMPLETED = (
 )
 RESPONSE_AUDIO_TRANSCRIPT_DONE = "response.audio_transcript.done"
 
+# Custom call end session
+CALL_END = "call.end"
+
 # Events to ignore during processing
 EVENTS_TO_IGNORE = {
     "response.function_call_arguments.delta",
