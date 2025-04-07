@@ -52,6 +52,7 @@ from typing import Any, AsyncIterator, Callable, Coroutine, Dict, List, Optional
 
 from langchain_core.tools import BaseTool
 from agent_builder.utils.websocket_connection import websocket_connection
+from agent_builder.utils.call_end_exception import CallEndException
 
 # Event types constants
 from agent_builder.config.default import (
@@ -343,6 +344,9 @@ class VoiceAgent:
             try:
                 result_event = await self._execute_tool_call(tool_call_data)
                 yield result_event
+            except CallEndException as e:
+                # re-raise CallEndException so it can bubble up
+                raise e
             except Exception as e:
                 yield {
                     "type": CONVERSATION_ITEM_CREATE,
