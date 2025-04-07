@@ -246,6 +246,8 @@ class VoiceAgent:
                 elif stream_name == "tool_outputs":
                     # If the tool_outputs stream hands us a "call_end_signal", raise CallEndException
                     # so that we can end the call in the parent function.
+                    logging.info("Recieved CALL_END from stream_name: tool_outputs")
+                    print("Recieved CALL_END from stream_name: tool_outputs")
                     if event.get("type") == CALL_END:
                         await self._handle_model_output_event(
                             event, handle_output_event
@@ -288,7 +290,8 @@ class VoiceAgent:
         elif event_type == INPUT_AUDIO_BUFFER_SPEECH_STARTED:
             await handle_output_event(json.dumps(event))
         elif event_type == CALL_END:
-            logging.INFO("Ending the call. Recieved CALL_END event.")
+            logging.info("Ending the call. Recieved CALL_END event.")
+            print("Ending the call. Recieved CALL_END event in _handle_model_output_event.")
             await handle_output_event(json.dumps(event))
         elif event_type == ERROR:
             logging.error(f"Error event received: {event}")
@@ -371,9 +374,12 @@ class VoiceAgent:
             tool_call_data = await self._tool_call_queue.get()
             try:
                 result_event = await self._execute_tool_call(tool_call_data)
+                print("result_event: ", result_event)
                 yield result_event
             except CallEndException as e:
                 # Instead of re-raising, we send a special "call_end_signal"
+                logging.error("CallEndException recieved inside _tool_output_stream")
+                print("CallEndException recieved inside _tool_output_stream")
                 yield {
                     "type": CALL_END,
                     "item": {},
@@ -453,6 +459,9 @@ class VoiceAgent:
                     active_streams.remove(stream_name)
                 else:
                     yield stream_name, data
+                # If we've been flagged for closure mid-merge, break
+                if self._should_close:
+                    break
         finally:
             # Cleanup tasks
             for task in tasks:
