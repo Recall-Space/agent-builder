@@ -35,11 +35,16 @@ class ToolBuilder(BaseBuilder):
         A description of what the tool does.
     schema : object
         The schema that defines the structure of the tool's input.
+    enable_exception_handling : bool
+        Whether to wrap the function and coroutine in exception‐handling decorators.
+        Default is True.
     """
 
-    def __init__(self):
+    def __init__(self, enable_exception_handling: bool = True):
         """Initializes the builder and resets all attributes."""
         super().__init__()
+        self.enable_exception_handling = enable_exception_handling
+        self.reset()
 
     def reset(self):
         """
@@ -97,8 +102,8 @@ class ToolBuilder(BaseBuilder):
 
         Parameters
         ----------
-        coroutine : Callable
-            The asynchronous coroutine that the tool will execute.
+        hint : str
+            A short hint that helps you handle or log exceptions.
         """
         self.hint = hint
 
@@ -131,9 +136,20 @@ class ToolBuilder(BaseBuilder):
         Parameters
         ----------
         max_iterations : int
-            Number of iterations the tool could be called maximum.
+            Number of times the tool can be called.
         """
         self.max_iterations = max_iterations
+
+    def set_enable_exception_handling(self, enable: bool):
+        """
+        Toggles whether to add the exception‐handling decorators.
+
+        Parameters
+        ----------
+        enable : bool
+            True to enable exception handling decorators, False otherwise.
+        """
+        self.enable_exception_handling = enable
 
     def validate(self):
         """
@@ -164,9 +180,10 @@ class ToolBuilder(BaseBuilder):
             The tool that was constructed based on the configured parameters.
         """
         self.validate()
-        self._add_exception_handling()
+        if self.enable_exception_handling:
+            self._add_exception_handling()
+
         if self.coroutine is None:
-            print()
             tool = StructuredTool.from_function(
                 func=self.function,
                 name=self.name,
@@ -194,11 +211,11 @@ class ToolBuilder(BaseBuilder):
 
     def _add_exception_handling(self):
         """
-        Adds decorator with given hint for exception handling of tool.
-
+        Adds decorator with given hint for exception handling of the tool.
         """
-        if self.hint == "":
+        if not self.hint:
             self.hint = f"{self.name} failed"
+
         self.function = raise_tool_exception_on_fail(hint=self.hint)(self.function)
         if self.coroutine is not None:
             self.coroutine = araise_tool_exception_on_fail(hint=self.hint)(
