@@ -8,6 +8,7 @@ from typing import Any, Callable
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import AgentExecutor
 import logging
+import json
 
 
 class Agent:
@@ -269,20 +270,20 @@ class Agent:
             message = ""
             if "actions" in chunk:
                 for action in chunk["actions"]:
-                    message = f"""<p><b style="color: #1f74bd;">{self.role}</b>: 
-                        Will use the tool `{action.tool}` with inputs 
-                        `{action.tool_input}`</p>"""
+                    message_dict = {"event":"tool_execution", "data": {"tool_name": action.tool, "tool_input":action.tool_input}}
+                    message =  json.dumps(message_dict)
+                    yield message
             elif "steps" in chunk:
                 for step in chunk["steps"]:
-                    message = f"""<p><b style="color: #1f74bd;">{self.role}</b>:
-                        Tool executed, processing the output from tool</p>"""
+                    message_dict = {"event":"tool_output", "data": step.observation}
+                    message =  json.dumps(message_dict)
+                    yield message
             elif "output" in chunk:
                 result = chunk
                 self._save_agent_action_sequence(result)
                 yield result
             else:
                 raise ValueError("Unexpected chunk format")
-            yield message
 
     def stream(self, input: str, chat_history: list):
         """

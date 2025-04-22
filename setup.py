@@ -6,7 +6,7 @@ from setuptools import find_namespace_packages, setup
 
 setup(
     name="agent-builder",
-    version="0.1.1",
+    version="0.1.7",
     author="Recall Space",
     author_email="info@recall.space",
     description="The agent-builder package to develop LLM based models.",

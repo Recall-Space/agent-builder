@@ -1,6 +1,7 @@
 # Event types constants
 SESSION_UPDATE = "session.update"
 RESPONSE_CREATE = "response.create"
+RESPONSE_CANCEL = "response.cancel"
 CONVERSATION_ITEM_CREATE = "conversation.item.create"
 INPUT_AUDIO_BUFFER_APPEND = "input_audio_buffer.append"
 RESPONSE_AUDIO_DELTA = "response.audio.delta"
@@ -12,6 +13,9 @@ INPUT_AUDIO_TRANSCRIPTION_COMPLETED = (
     "conversation.item.input_audio_transcription.completed"
 )
 RESPONSE_AUDIO_TRANSCRIPT_DONE = "response.audio_transcript.done"
+
+# Custom call end session
+CALL_END = "call.end"
 
 # Events to ignore during processing
 EVENTS_TO_IGNORE = {
